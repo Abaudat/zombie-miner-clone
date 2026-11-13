@@ -46,13 +46,23 @@ export const UPG = {
   bridge: { max: 3, base: 160, growth: 1.7 },
 };
 
+// Coins are worth one zone-value unit each and a trip hauls a few dozen of them,
+// so prices are scaled to "trips", rounded to friendly numbers.
+const PRICE_SCALE = 1 / 6;
+function nice(n) {
+  if (n < 20) return Math.max(1, Math.round(n));
+  const p = Math.pow(10, Math.floor(Math.log10(n)) - 1);
+  return Math.round(n / p / 5) * 5 * p;
+}
+
 export function upgradeCost(type, level, zone) {
   const v = ZONES[zone].value;
-  if (type === 'conveyor') return 500 * v;
-  if (type === 'next') return (2500 + 1500 * zone) * v;
-  if (type === 'statue') return 14000 * v;
-  const u = UPG[type];
-  return Math.round(u.base * Math.pow(u.growth, level)) * v;
+  let c;
+  if (type === 'conveyor') c = 500;
+  else if (type === 'next') c = 2500 + 1500 * zone;
+  else if (type === 'statue') c = 14000;
+  else { const u = UPG[type]; c = u.base * Math.pow(u.growth, level); }
+  return nice(c * PRICE_SCALE) * v;
 }
 
 // Pads on the pad island (local coords)
