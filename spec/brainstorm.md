@@ -40,3 +40,7 @@
   5. Treasure vault — big gold nuggets (hero gold material) — value 10k
 - **Ending:** win screen. Final goal in the vault: fill a giant golden cat statue → ending / "you beat the ad" screen. Target ~15–20 min playthrough.
 - **Ambience:** pure tactile satisfaction, chill: no fail states, no timers, nothing punishing. Audio carries it: marble clatter on the blade, crusher grind, coin cascade chimes, ka-ching pops as pads fill, upbeat light music loop.
+
+### Spec freeze
+- Draft spec presented and approved by the user. Remaining details decided by Claude and accepted: upgrade level counts, conveyor per zone, fields ~1.5x zone requirement, win screen stats, auto-save, Three.js + custom sphere solver, procedural SFX.
+- Blender MCP registered for this project (local scope) for asset creation.
