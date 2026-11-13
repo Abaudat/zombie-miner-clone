@@ -57,7 +57,7 @@ export class Pad {
     this.fill = 0; this.pulse = 0; this.visible = true; this.needsDraw = true; this.pop = 0;
     this.canvas = document.createElement('canvas'); this.canvas.width = this.canvas.height = 256;
     this.tex = new THREE.CanvasTexture(this.canvas); this.tex.colorSpace = THREE.SRGBColorSpace; this.tex.anisotropy = 8;
-    const mat = new THREE.MeshStandardMaterial({ map: this.tex, transparent: true, roughness: 0.7, emissive: 0xffffff, emissiveMap: this.tex, emissiveIntensity: 0.35, depthWrite: false });
+    const mat = new THREE.MeshStandardMaterial({ map: this.tex, transparent: true, roughness: 0.7, emissive: 0xffffff, emissiveMap: this.tex, emissiveIntensity: 0.06, depthWrite: false });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(def.size, def.size), mat);
     this.mesh.rotation.x = -Math.PI / 2;
     this.mesh.position.set(this.x, 0.03, this.z);

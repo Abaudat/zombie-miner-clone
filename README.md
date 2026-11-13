@@ -48,7 +48,7 @@ English · Español · Français · 日本語 · 简体中文 · 繁體中文
 
 - **Three.js**, zero build step — plain ES modules served straight from GitHub Pages.
 - A **custom position-based sphere solver** with a spatial hash, sleeping bodies, inter-particle friction and a "grippy" blade, so thousands of gems and coins actually pile, roll and avalanche.
-- Instanced rendering for every gem and coin, PBR materials with environment reflections, realtime shadows.
+- Instanced rendering for every gem and coin, PBR materials with environment reflections, realtime shadows, and a post-processing stack (bloom, tilt-shift "miniature" blur, color grade) for that glossy toy-diorama look.
 - **100% procedural**: all models, textures, sound effects and music are generated in code.
 
 ## Run locally

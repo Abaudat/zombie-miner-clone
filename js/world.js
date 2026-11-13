@@ -7,20 +7,42 @@ import { buildCat } from './dozer.js';
 const std = (color, rough = 0.6, metal = 0, extra = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
 
-function noiseTexture(base, var1 = 18, spots = true) {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
+// Smooth, matte ground: big soft blotches + faint grain (tileable by drawing wrapped copies)
+function noiseTexture(base, strength = 1) {
+  const S = 512;
+  const c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d');
   const col = new THREE.Color(base);
-  g.fillStyle = '#' + col.getHexString(); g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 2600; i++) {
-    const v = (Math.random() - 0.5) * var1;
-    g.fillStyle = `rgba(${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${Math.abs(v) / 255 * 2.2})`;
-    const r = 1 + Math.random() * (spots ? 6 : 2);
-    g.beginPath(); g.arc(Math.random() * 256, Math.random() * 256, r, 0, 7); g.fill();
+  g.fillStyle = '#' + col.getHexString(); g.fillRect(0, 0, S, S);
+  const blob = (x, y, r, rgba) => {
+    for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      gr.addColorStop(0, rgba); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+    }
+  };
+  for (let i = 0; i < 46; i++) {
+    const light = Math.random() < 0.5;
+    blob(Math.random() * S, Math.random() * S, 50 + Math.random() * 150,
+      light ? `rgba(255,240,220,${0.07 * strength})` : `rgba(30,15,5,${0.1 * strength})`);
   }
+  for (let i = 0; i < 160; i++) blob(Math.random() * S, Math.random() * S, 6 + Math.random() * 16, `rgba(20,10,0,${0.06 * strength})`);
+  const img = g.getImageData(0, 0, S, S), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (Math.random() - 0.5) * 7 * strength; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = 8;
+  return t;
+}
+
+function softSpriteTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
@@ -113,10 +135,10 @@ export class World {
     const Z = ZONES[k], L = LAYOUT;
     const group = new THREE.Group();
     this.scene.add(group);
-    const tex = noiseTexture(Z.ground, 22); tex.repeat.set(0.09, 0.09);
-    const tex2 = noiseTexture(Z.ground2, 18); tex2.repeat.set(0.09, 0.09);
-    const topF = std(0xffffff, 0.9, 0, { map: tex });
-    const topP = std(0xffffff, 0.9, 0, { map: tex2 });
+    const tex = noiseTexture(Z.ground); tex.repeat.set(0.035, 0.035);
+    const tex2 = noiseTexture(Z.ground2); tex2.repeat.set(0.035, 0.035);
+    const topF = std(0xffffff, 0.95, 0, { map: tex });
+    const topP = std(0xffffff, 0.95, 0, { map: tex2 });
     const side = std(Z.side, 0.85);
     const base = k * ZONE_LEN;
     const mF = 3.2, mP = 3.2;
@@ -127,7 +149,33 @@ export class World {
     this.buildCrusher(zone);
     this.buildDecor(zone);
     if (k === 4) this.buildStatue(zone);
+    if (Z.smoke) this.buildSmoke(zone, Z.smoke);
     this.zones.push(zone);
+  }
+
+  buildSmoke(zone, color) {
+    const { k } = zone;
+    this.smokeTex = this.smokeTex || softSpriteTexture();
+    this.smoke = this.smoke || [];
+    let seed = 99 + k * 13;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const spots = [];
+    for (let i = 0; i < 26; i++) { // along the long sides
+      const sx = rnd() < 0.5 ? -1 : 1;
+      spots.push([sx * (22 + rnd() * 14), rnd() * ZONE_LEN]);
+    }
+    for (const [a, b] of [[LAYOUT.F.s1 + 1.5, LAYOUT.P.s0 - 1.5], [LAYOUT.P.s1 + 1.5, ZONE_LEN - 1.5]]) {
+      for (let i = 0; i < 8; i++) { const x = (rnd() - 0.5) * 40; if (Math.abs(x) < 5) continue; spots.push([x, a + rnd() * (b - a)]); }
+    }
+    for (const [x, s] of spots) {
+      const m = new THREE.SpriteMaterial({ map: this.smokeTex, color, transparent: true, opacity: 0.5, depthWrite: false });
+      const sp = new THREE.Sprite(m);
+      const sc = 5 + rnd() * 7;
+      sp.scale.set(sc, sc, 1);
+      sp.position.set(x, -4 + rnd() * 3, zw(k, s));
+      sp.userData = { base: sp.position.y, ph: rnd() * 6.28, sc };
+      zone.group.add(sp); this.smoke.push(sp);
+    }
   }
 
   buildCrusher(zone) {
@@ -144,14 +192,14 @@ export class World {
     }
     // 4 vertical spiked rollers
     const parts = [new THREE.CylinderGeometry(0.62, 0.62, 2.4, 18)];
-    const cone = new THREE.ConeGeometry(0.16, 0.42, 6);
-    for (let row = 0; row < 5; row++) for (let a = 0; a < 8; a++) {
+    const cone = new THREE.ConeGeometry(0.12, 0.46, 5);
+    for (let row = 0; row < 8; row++) for (let a = 0; a < 11; a++) {
       const g = cone.clone();
       g.rotateZ(-Math.PI / 2);
-      const ang = a / 8 * Math.PI * 2 + row * 0.39;
-      g.translate(0.78, 0, 0);
+      const ang = a / 11 * Math.PI * 2 + row * 0.29;
+      g.translate(0.8, 0, 0);
       g.rotateY(ang);
-      g.translate(0, -0.95 + row * 0.48, 0);
+      g.translate(0, -1.05 + row * 0.3, 0);
       parts.push(g);
     }
     const rollerGeo = mergeGeometries(parts.map(p => p.index ? p.toNonIndexed() : p));
@@ -340,7 +388,42 @@ export class World {
 
   buildWallMeshes(walls) {
     if (this.wallMeshes) { this.scene.remove(this.wallMeshes); this.wallMeshes.dispose(); }
-    const vis = walls.filter(w => w.vis !== 'none');
+    if (this.rockMeshes) { this.scene.remove(this.rockMeshes); this.rockMeshes.dispose(); }
+    // natural zones get chunky boulder borders, the vault keeps its gold trim
+    const rocky = walls.filter(w => w.vis === 'rim' && ZONES[w.k].rocks);
+    let seed = 4242;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const rocks = [];
+    for (const w of rocky) {
+      const lx = w.x1 - w.x0, lz = w.z1 - w.z0, along = Math.max(lx, lz);
+      const n = Math.max(1, Math.round(along / 1.25));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        const cx = lx >= lz ? w.x0 + lx * t : (w.x0 + w.x1) / 2;
+        const cz = lx >= lz ? (w.z0 + w.z1) / 2 : w.z0 + lz * t;
+        const s = 0.75 + rnd() * 0.75;
+        // push the rock centre slightly outward so it doesn't eat the play area
+        const sW = -cz - w.k * ZONE_LEN, cS = sW < 46 ? 22 : 64;
+        const ox = lx >= lz ? 0 : Math.sign(cx) * 0.45, oz = lx >= lz ? -Math.sign(sW - cS) * 0.45 : 0;
+        rocks.push([cx + ox + (rnd() - 0.5) * 0.3, s * 0.3, cz + oz + (rnd() - 0.5) * 0.3, s, w.k]);
+        if (rnd() < 0.3) rocks.push([cx + ox * 2.5 + (rnd() - 0.5) * 0.6, 0.7 + rnd() * 0.4, cz + oz * 2.5 + (rnd() - 0.5) * 0.6, 0.6 + rnd() * 0.5, w.k]);
+      }
+    }
+    const rg = new THREE.DodecahedronGeometry(1, 0);
+    const rim = new THREE.InstancedMesh(rg, std(0xffffff, 0.85, 0, { flatShading: true }), Math.max(1, rocks.length));
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c4 = new THREE.Color(), v = new THREE.Vector3(), sv = new THREE.Vector3();
+    rocks.forEach(([x, y, z, s, k], i) => {
+      q.setFromEuler(e.set(rnd() * 6, rnd() * 6, rnd() * 6));
+      m4.compose(v.set(x, y, z), q, sv.set(s * (0.9 + rnd() * 0.4), s * (0.7 + rnd() * 0.3), s * (0.9 + rnd() * 0.4)));
+      rim.setMatrixAt(i, m4);
+      c4.set(ZONES[k].rim).multiplyScalar(0.85 + rnd() * 0.3);
+      rim.setColorAt(i, c4);
+    });
+    rim.count = rocks.length;
+    rim.castShadow = true; rim.receiveShadow = true;
+    this.scene.add(rim);
+    this.rockMeshes = rim;
+    const vis = walls.filter(w => w.vis !== 'none' && !(w.vis === 'rim' && ZONES[w.k].rocks));
     const geo = new RoundedBoxGeometry(1, 1, 1, 2, 0.18);
     const im = new THREE.InstancedMesh(geo, std(0xffffff, 0.6, 0.05), vis.length);
     const m = new THREE.Matrix4(), c = new THREE.Color();
@@ -450,6 +533,13 @@ export class World {
         } else p.position.y = p.userData.target;
       }
       if (done) b.userData.animate = false;
+    }
+    if (this.smoke) for (const sp of this.smoke) {
+      const u = sp.userData, t = this.time * 0.25 + u.ph;
+      sp.position.y = u.base + Math.sin(t) * 0.8;
+      const sc = u.sc * (1 + 0.15 * Math.sin(t * 1.3));
+      sp.scale.set(sc, sc, 1);
+      sp.material.opacity = 0.35 + 0.2 * Math.sin(t * 0.7);
     }
     if (this.statue) this.statue.rotation.y = Math.sin(this.time * 0.6) * 0.12;
   }

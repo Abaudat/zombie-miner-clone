@@ -28,11 +28,11 @@ function gemGeometry(type) {
 function gemMaterial(Z) {
   const base = { color: Z.gemColor, emissive: Z.gemEmissive };
   switch (Z.gem) {
-    case 'marble': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.12, metalness: 0.05, envMapIntensity: 0.9, emissiveIntensity: 1.4 });
-    case 'crystal': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.18, metalness: 0.05, envMapIntensity: 1.3, emissiveIntensity: 1.6 });
-    case 'orb': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.1, metalness: 1, envMapIntensity: 1.4 });
-    case 'emerald': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.08, metalness: 0.2, flatShading: true, envMapIntensity: 1.6, emissiveIntensity: 1.3 });
-    case 'nugget': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.24, metalness: 1, flatShading: true, envMapIntensity: 1.3 });
+    case 'marble': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.22, metalness: 0.1, envMapIntensity: 1.7, emissiveIntensity: 1.0 });
+    case 'crystal': return new THREE.MeshPhysicalMaterial({ ...base, roughness: 0.15, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.1, envMapIntensity: 1.2, emissiveIntensity: 1.5 });
+    case 'orb': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.08, metalness: 1, envMapIntensity: 1.6 });
+    case 'emerald': return new THREE.MeshPhysicalMaterial({ ...base, roughness: 0.05, metalness: 0.1, clearcoat: 1, flatShading: true, envMapIntensity: 1.6, emissiveIntensity: 1.2 });
+    case 'nugget': return new THREE.MeshStandardMaterial({ ...base, roughness: 0.22, metalness: 1, flatShading: true, envMapIntensity: 1.6 });
   }
 }
 

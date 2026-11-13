@@ -10,6 +10,7 @@ import { FX } from './fx.js';
 import { Sound } from './audio.js';
 import { Input } from './input.js';
 import { LANGS, detectLang, setLang, getLang, t } from './i18n.js';
+import { Post } from './post.js';
 
 const SAVE_KEY = 'purrdozer-save-v1';
 const $ = id => document.getElementById(id);
@@ -25,6 +26,7 @@ function defaultState() {
 }
 let state = defaultState();
 let hasSave = false;
+if (/[?&]fresh/.test(location.search)) { try { localStorage.removeItem(SAVE_KEY); } catch (_) {} }
 try {
   const raw = localStorage.getItem(SAVE_KEY);
   if (raw) { const s = JSON.parse(raw); if (s && s.v === 1) { state = Object.assign(defaultState(), s); state.justBuilt = -1; hasSave = !state.won && (s.stats.crushed > 0 || s.unlocked > 0); } }
@@ -47,28 +49,30 @@ renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.75;
-scene.fog = new THREE.Fog(ZONES[0].fog, 50, 120);
+scene.environmentIntensity = 0.6;
+scene.fog = new THREE.Fog(ZONES[0].fog, 62, 150);
 scene.background = new THREE.Color(ZONES[0].fog);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 300);
-const hemi = new THREE.HemisphereLight(0xeaf4ff, 0x8a6a4a, 1.0);
+const hemi = new THREE.HemisphereLight(0xdfeaff, 0x8a6a4a, 0.6);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff0d8, 2.5);
+const sun = new THREE.DirectionalLight(0xffeccc, 3.4);
 sun.castShadow = true;
-sun.shadow.mapSize.set(isTouch ? 1024 : 2048, isTouch ? 1024 : 2048);
-const sc = sun.shadow.camera; sc.left = -24; sc.right = 24; sc.top = 24; sc.bottom = -24; sc.near = 1; sc.far = 80;
+sun.shadow.mapSize.set(isTouch ? 1536 : 2048, isTouch ? 1536 : 2048);
+const sc = sun.shadow.camera; sc.left = -30; sc.right = 30; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 100;
+sun.shadow.radius = 3;
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 scene.add(sun); scene.add(sun.target);
 
 // ---------- systems ----------
-const physics = new Physics(8000);
+const physics = new Physics(9600);
+const post = new Post(renderer, scene, camera, isTouch);
 const world = new World(scene);
 const bodies = new Bodies(scene, physics);
 const dozer = new Dozer(scene);
@@ -330,23 +334,24 @@ const camTarget = new THREE.Vector3();
 const camLook = new THREE.Vector3();
 const camPos = new THREE.Vector3();
 let W = innerWidth, H = innerHeight, gameFov = 50;
-const CAM_D = 33, CAM_EL = 57 * Math.PI / 180;
+const CAM_D = 44, CAM_EL = 50 * Math.PI / 180;
 function resize() {
   W = innerWidth; H = innerHeight;
   renderer.setSize(W, H, false);
   camera.aspect = W / H;
   const aspect = W / H;
-  const visW = aspect < 1 ? 21 : Math.min(42, 21 + (aspect - 1) * 16);
+  const visW = aspect < 1 ? 24 : Math.min(46, 24 + (aspect - 1) * 16);
   const fromW = 2 * Math.atan(visW / 2 / CAM_D / aspect) * 180 / Math.PI;
-  const fromH = 2 * Math.atan(22 / 2 / CAM_D) * 180 / Math.PI; // keep enough view ahead in landscape
+  const fromH = 2 * Math.atan(25 / 2 / CAM_D) * 180 / Math.PI; // keep enough view ahead in landscape
   gameFov = THREE.MathUtils.clamp(Math.max(fromW, fromH), 30, 72);
   camera.updateProjectionMatrix();
+  post.setSize(W, H, pixelRatio);
 }
 addEventListener('resize', resize);
 
 let orbit = 0;
 function updateCamera(dt) {
-  const tx = dozer.x, tz = dozer.z - 2.5;
+  const tx = dozer.x, tz = dozer.z - 3.5;
   camTarget.x += (tx - camTarget.x) * (1 - Math.exp(-dt * 5));
   camTarget.z += (tz - camTarget.z) * (1 - Math.exp(-dt * 5));
   const gPos = new THREE.Vector3(camTarget.x, Math.sin(CAM_EL) * CAM_D, camTarget.z + Math.cos(CAM_EL) * CAM_D);
@@ -378,7 +383,7 @@ function updateCamera(dt) {
   camera.lookAt(camLook);
   camera.updateProjectionMatrix();
   // light follows the action
-  sun.position.set(camLook.x + 12, 28, camLook.z + 8);
+  sun.position.set(camLook.x + 16, 30, camLook.z + 4);
   sun.target.position.set(camLook.x, 0, camLook.z);
 }
 
@@ -436,6 +441,7 @@ function frame(now) {
     if (fpsT > 2.5) {
       const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
       if (fps < 42 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
+      else if (fps < 34 && post.enabled) post.enabled = false; // last resort on weak GPUs
     }
   } else {
     // keep coins/gems settling in the background (e.g. during ending)
@@ -476,7 +482,7 @@ function frame(now) {
     popAcc.forEach((v, k) => {
       if (v > 0) {
         const s = state.conveyors[k] ? 31 : 30;
-        fx.popup('+' + fmt(v), state.conveyors[k] ? 10 : (Math.random() - 0.5) * 3, 3, zw(k, s), 'gold');
+        fx.popup('+' + fmt(v), state.conveyors[k] ? 10 : (Math.random() - 0.5) * 3, 5, zw(k, s), 'gold');
         popAcc[k] = 0;
       }
     });
@@ -498,7 +504,7 @@ function frame(now) {
   fx.update(dt, W, H);
   updateAmbience();
   updateCamera(dt);
-  renderer.render(scene, camera);
+  post.render(dt);
 }
 
 // ---------- boot ----------
@@ -522,7 +528,10 @@ async function boot() {
   addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') save(); });
   addEventListener('pagehide', () => { if (mode === 'play') save(); });
 }
-boot();
+boot().catch(e => console.error("boot failed", e && e.stack || e));
 
 // debug hooks for testing
-window.__pd = { state, physics, dozer, pads, complete, bodies, input };
+if (/[?&]dev/.test(location.search)) {
+  window.__pd = { state, physics, dozer, pads, complete, bodies, input, post };
+  import('./dev.js').then(m => m.install(window.__pd));
+}
