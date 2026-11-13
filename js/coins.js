@@ -33,6 +33,7 @@ export class Coins {
     const w = this.world = new RAPIER.World({ x: 0, y: -24, z: 0 });
     w.timestep = STEP;
     w.integrationParameters.numSolverIterations = 2;
+    w.integrationParameters.contact_natural_frequency = 12; // softer contacts: no explosive depenetration
     // one big floor; the island rims are walls, so coins never reach the chasms
     const floor = w.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -1, -200));
     w.createCollider(RAPIER.ColliderDesc.cuboid(400, 1, 420).setFriction(0.7), floor);
@@ -45,7 +46,8 @@ export class Coins {
     this.px = new Float32Array(cap); this.py = new Float32Array(cap); this.pz = new Float32Array(cap);
     this.alive = new Uint8Array(cap);
     // our own sleeping: resting coins become fixed bodies until something disturbs them
-    this.frozen = new Uint8Array(cap); this.rest = new Float32Array(cap);
+    this.frozen = new Uint8Array(cap); this.rest = new Float32Array(cap); this.age = new Float32Array(cap);
+    this.lx = new Float32Array(cap); this.ly = new Float32Array(cap); this.lz = new Float32Array(cap);
     this.free = [];
     for (let i = cap - 1; i >= 0; i--) this.free.push(i);
     this.maxIndex = 0; this.count = 0;
@@ -110,8 +112,8 @@ export class Coins {
     const sz = TIERS[tier].size;
     this.world.createCollider(RAPIER.ColliderDesc.roundCylinder(COIN_HALF * sz - 0.025, COIN_RAD * sz - 0.025, 0.025)
       .setFriction(0.55).setRestitution(0.12).setDensity(2), b);
-    this.body[i] = b; this.value[i] = value; this.tier[i] = tier; this.alive[i] = 1; this.frozen[i] = 0; this.rest[i] = 0;
-    this.px[i] = x; this.py[i] = y; this.pz[i] = z;
+    this.body[i] = b; this.value[i] = value; this.tier[i] = tier; this.alive[i] = 1; this.frozen[i] = 0; this.rest[i] = 0; this.age[i] = 0;
+    this.px[i] = x; this.py[i] = y; this.pz[i] = z; this.lx[i] = x; this.ly[i] = y; this.lz[i] = z;
     if (i + 1 > this.maxIndex) this.maxIndex = i + 1;
     this.count++;
     return i;
@@ -138,7 +140,7 @@ export class Coins {
   thaw(i) {
     if (!this.frozen[i]) return;
     this.body[i].setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-    this.frozen[i] = 0; this.rest[i] = 0;
+    this.frozen[i] = 0; this.rest[i] = 0; this.age[i] = 10; // settled coins are never "fresh" again
   }
 
   wakeAround(x, y, z, r) {
@@ -173,9 +175,7 @@ export class Coins {
     const fast = [];
     for (let i = 0; i < this.maxIndex; i++) {
       if (!alive[i] || frozen[i] || py[i] > 1.4) continue;
-      let near = false; // only coins being shoved by the dozer (not ones raining from the crusher)
-      for (const s of spots) { const dx = px[i] - s.x, dz = pz[i] - s.z; if (dx * dx + dz * dz < (s.r + 1.5) * (s.r + 1.5)) { near = true; break; } }
-      if (!near) continue;
+      if (this.age[i] < 1.2) continue; // coins still raining from the crusher don't wake the heap
       const v = body[i].linvel();
       if (v.x * v.x + v.z * v.z > 1.0 && Math.abs(v.y) < 1.5) fast.push(i);
     }
@@ -220,9 +220,38 @@ export class Coins {
     if (this.acc >= STEP * 0.9) {
       this.applyBelts();
       this.world.step();
+      this.clampSpeeds();
       this.acc = Math.max(0, Math.min(this.acc - STEP, STEP)); n = 1;
     }
     return n;
+  }
+
+  // coins pushed by the dozer should be shoved, not launched
+  clampSpeeds() {
+    const { alive, frozen, body, age } = this;
+    for (let i = 0; i < this.maxIndex; i++) {
+      if (!alive[i] || frozen[i]) continue;
+      age[i] += STEP;
+      const b = body[i];
+      if (b.isSleeping()) continue;
+      const v = b.linvel(), t = b.translation();
+      // explosion guard: a coin pinched between the blade and a wall/heap gets a huge
+      // depenetration kick in a single step; put it back where it was instead
+      if (v.x * v.x + v.y * v.y + v.z * v.z > 256) {
+        b.setTranslation({ x: this.lx[i], y: this.ly[i], z: this.lz[i] }, false);
+        b.setLinvel({ x: 0, y: 0, z: 0 }, false); b.setAngvel({ x: 0, y: 0, z: 0 }, false);
+        continue;
+      }
+      this.lx[i] = t.x; this.ly[i] = t.y; this.lz[i] = t.z;
+      if (age[i] < 0.6) continue; // fresh out of the crusher: let it fly
+      let { x, y, z } = v, ch = false;
+      const h = Math.hypot(x, z);
+      if (h > 7.5) { x *= 7.5 / h; z *= 7.5 / h; ch = true; }
+      if (y > 2.2) { y = 2.2; ch = true; }
+      if (ch) b.setLinvel({ x, y, z }, false);
+      const a = b.angvel(), am = Math.hypot(a.x, a.y, a.z);
+      if (am > 18) { const k = 18 / am; b.setAngvel({ x: a.x * k, y: a.y * k, z: a.z * k }, false); }
+    }
   }
 
   applyBelts() {

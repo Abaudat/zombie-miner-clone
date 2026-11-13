@@ -449,7 +449,7 @@ function frame(now) {
     if (steps === 4) acc = 0;
     coins.setKinematic(physics.kin);
     const bl = physics.kin[0];
-    coins.manage(dt, [{ x: bl.x, z: bl.z, r: bl.hx + 1.6 }, { x: dozer.x, z: dozer.z, r: 2.3 }]);
+    coins.manage(dt, [{ x: bl.x, z: bl.z, r: bl.hx + 2.4 }, { x: dozer.x, z: dozer.z, r: 3.0 }]);
     coins.step(dt);
     absorbCoins();
     state.stats.time += dt;
