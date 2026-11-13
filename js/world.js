@@ -124,9 +124,24 @@ export class World {
       } else {
         mat = new THREE.MeshBasicMaterial({ color: Z.abyss });
       }
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(260, ZONE_LEN + 0.5), mat);
+      // each zone's chasm floor extends back over the previous one and fades in, so the
+      // transition (e.g. dirt pit -> lava) is a soft gradient instead of a hard seam
+      const FADE = k > 0 ? 34 : 0, len = ZONE_LEN + 0.5 + FADE;
+      if (FADE) {
+        if (!this.fadeTex) {
+          const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+          const g = c.getContext('2d'), gr = g.createLinearGradient(0, 256, 0, 0);
+          const f = FADE / len;
+          gr.addColorStop(0, '#000'); gr.addColorStop(f * 0.15, '#000'); gr.addColorStop(f, '#fff'); gr.addColorStop(1, '#fff');
+          g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+          this.fadeTex = new THREE.CanvasTexture(c);
+        }
+        mat.alphaMap = this.fadeTex; mat.transparent = true; mat.depthWrite = false;
+      }
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(260, len), mat);
       p.rotation.x = -Math.PI / 2;
-      p.position.set(0, -9, zw(k, ZONE_LEN / 2 - 6));
+      p.position.set(0, -9 + k * 0.02, zw(k, ZONE_LEN / 2 - 6 - FADE / 2));
+      p.renderOrder = -1 + k * 0.01;
       this.scene.add(p);
     }
   }
