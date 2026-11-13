@@ -2,9 +2,11 @@
 // stack and slide with friction. Gems keep the custom sphere solver (physics.js).
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { MASK_COIN } from './config.js';
+import { MASK_COIN, ZONE_LEN } from './config.js';
 
 export const COIN_RAD = 0.32, COIN_HALF = 0.055;
+const G_COIN = (0x1 << 16) | 0x7, G_STATIC = (0x2 << 16) | 0x1, G_DOZER = (0x4 << 16) | 0x1;
+const DOZER_MASS = 160; // vs ~0.07 for a coin: heavy, but finite so pinned coins stop it instead of exploding
 // coin tiers (value in zone units): bronze, silver, gold, big gold, royal purple
 export const TIERS = [
   { v: 1, color: 0xc77a3c, metal: 0.9, size: 1 },
@@ -35,9 +37,9 @@ export class Coins {
     w.integrationParameters.numSolverIterations = 2;
     w.integrationParameters.contact_natural_frequency = 12; // softer contacts: no explosive depenetration
     // one big floor; the island rims are walls, so coins never reach the chasms
-    const floor = w.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -1, -200));
-    w.createCollider(RAPIER.ColliderDesc.cuboid(400, 1, 420).setFriction(0.7), floor);
-    this.wallBodies = [];
+    const floor = w.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -5, -200));
+    w.createCollider(RAPIER.ColliderDesc.cuboid(400, 5, 420).setFriction(0.7).setCollisionGroups(G_STATIC), floor);
+    this.wallBodies = []; this.wallRects = [];
     // bulldozer parts: kinematic boxes driven every step
     this.kin = [];
 
@@ -46,7 +48,7 @@ export class Coins {
     this.px = new Float32Array(cap); this.py = new Float32Array(cap); this.pz = new Float32Array(cap);
     this.alive = new Uint8Array(cap);
     // our own sleeping: resting coins become fixed bodies until something disturbs them
-    this.frozen = new Uint8Array(cap); this.rest = new Float32Array(cap); this.age = new Float32Array(cap);
+    this.frozen = new Uint8Array(cap); this.rest = new Float32Array(cap); this.age = new Float32Array(cap); this.near = new Uint8Array(cap);
     this.lx = new Float32Array(cap); this.ly = new Float32Array(cap); this.lz = new Float32Array(cap);
     this.free = [];
     for (let i = cap - 1; i >= 0; i--) this.free.push(i);
@@ -71,34 +73,83 @@ export class Coins {
 
   setWalls(walls) {
     for (const b of this.wallBodies) this.world.removeRigidBody(b);
-    this.wallBodies = [];
+    this.wallBodies = []; this.wallRects = [];
     for (const wl of walls) {
       if (!(wl.mask & MASK_COIN)) continue;
-      const b = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation((wl.x0 + wl.x1) / 2, 2, (wl.z0 + wl.z1) / 2));
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid((wl.x1 - wl.x0) / 2, 2, (wl.z1 - wl.z0) / 2).setFriction(0.3), b);
+      const { x0, x1, z0, z1 } = wl;
+      // for coins pinned in a wall, which way is the play area?
+      let out = null;
+      if (wl.vis === 'rim') {
+        if (x1 - x0 > z1 - z0) { const sLoc = -(z0 + z1) / 2 - wl.k * ZONE_LEN, centre = sLoc < 49 ? 22 : 64; out = sLoc > centre ? [0, 1] : [0, -1]; }
+        else out = (x0 + x1) / 2 > 0 ? [-1, 0] : [1, 0];
+      }
+      this.wallRects.push({ x0, x1, z0, z1, out });
+      const b = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation((x0 + x1) / 2, 2, (z0 + z1) / 2));
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid((x1 - x0) / 2, 2, (z1 - z0) / 2).setFriction(0.3).setCollisionGroups(G_STATIC), b);
       this.wallBodies.push(b);
     }
   }
 
-  // colliders: [{x,z,a,hx,hz,h}] as produced by Dozer.colliders()
+  // colliders: [{x,z,a,hx,hz,h}] as produced by Dozer.colliders().
+  // The dozer parts are heavy *dynamic* bodies velocity-driven onto the dozer's pose every
+  // step (see driveDozer). Unlike kinematic bodies they have finite strength, so a coin pinned
+  // against a wall or a heap holds the blade back instead of being crushed through something.
+  // Blade plates are thickened backwards (front faces unchanged) so they can't step over coins.
   setKinematic(cols) {
-    const w = this.world;
+    const w = this.world, E = 0.4;
     while (this.kin.length < cols.length) {
       const c = cols[this.kin.length];
-      const b = w.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(c.x, c.h / 2, c.z));
-      w.createCollider(RAPIER.ColliderDesc.cuboid(c.hx, c.h / 2, c.hz).setFriction(0.5), b);
-      this.kin.push({ b, hx: c.hx });
+      const b = w.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(c.x, (c.h - 1) / 2, c.z)
+        .setGravityScale(0).enabledRotations(false, true, false).setCanSleep(false).setCcdEnabled(true));
+      this.kin.push({ b, hx: -1, tx: c.x, ty: 0, tz: c.z, ta: c.a });
     }
     cols.forEach((c, i) => {
-      const k = this.kin[i];
-      if (Math.abs(k.hx - c.hx) > 1e-3) { // blade width changed: rebuild its collider
-        w.removeCollider(k.b.collider(0), false);
-        w.createCollider(RAPIER.ColliderDesc.cuboid(c.hx, c.h / 2, c.hz).setFriction(0.5), k.b);
+      const k = this.kin[i], ex = c.pusher ? E : 0;
+      if (Math.abs(k.hx - c.hx) > 1e-3) { // first use or blade width changed: (re)build its collider
+        if (k.b.numColliders()) w.removeCollider(k.b.collider(0), false);
+        const hx = c.hx, hy = (c.h + 1) / 2, hz = c.hz + ex; // reaches below the floor: coins can't slip under
+        w.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.5).setRestitution(0)
+          .setDensity(DOZER_MASS / (8 * hx * hy * hz)).setCollisionGroups(G_DOZER), k.b);
         k.hx = c.hx;
+        k.b.setTranslation({ x: c.x, y: (c.h - 1) / 2, z: c.z }, true);
       }
-      k.b.setNextKinematicTranslation({ x: c.x, y: c.h / 2, z: c.z });
-      k.b.setNextKinematicRotation({ x: 0, y: Math.sin(c.a / 2), z: 0, w: Math.cos(c.a / 2) });
+      const fx = Math.sin(c.a) * ex, fz = Math.cos(c.a) * ex;
+      k.tx = c.x - fx; k.ty = (c.h - 1) / 2; k.tz = c.z - fz; k.ta = c.a;
     });
+  }
+
+  // chase the target pose within one step
+  driveDozer() {
+    for (const k of this.kin) {
+      const b = k.b, t = b.translation(), r = b.rotation();
+      b.setLinvel({ x: (k.tx - t.x) / STEP, y: (k.ty - t.y) / STEP, z: (k.tz - t.z) / STEP }, true);
+      const a = 2 * Math.atan2(r.y, r.w);
+      let da = k.ta - a; da = Math.atan2(Math.sin(da), Math.cos(da));
+      b.setAngvel({ x: 0, y: da / STEP, z: 0 }, true);
+      // A jammed pile held this part back: like a real dozer, the coins it should now occupy
+      // spill up over the top, and the part catches up with the dozer.
+      if (Math.hypot(k.tx - t.x, k.tz - t.z) > 0.3) {
+        this.spillOver(k);
+        b.setTranslation({ x: k.tx, y: k.ty, z: k.tz }, true);
+      }
+    }
+  }
+
+  spillOver(k) {
+    const he = k.b.collider(0).halfExtents(), top = k.ty + he.y;
+    const Rx = Math.cos(k.ta), Rz = -Math.sin(k.ta), Fx = Math.sin(k.ta), Fz = Math.cos(k.ta);
+    const { px, pz, py, alive, body } = this;
+    for (let i = 0; i < this.maxIndex; i++) {
+      if (!alive[i] || py[i] > top) continue;
+      const wx = px[i] - k.tx, wz = pz[i] - k.tz;
+      const lx = wx * Rx + wz * Rz, lz = wx * Fx + wz * Fz;
+      if (Math.abs(lx) > he.x + 0.15 || Math.abs(lz) > he.z + 0.15) continue;
+      this.thaw(i);
+      const t = body[i].translation();
+      body[i].setTranslation({ x: t.x, y: top + 0.35 + Math.random() * 0.2, z: t.z }, true);
+      body[i].setLinvel({ x: 0, y: 0.5, z: 0 }, true);
+      py[i] = top + 0.35;
+    }
   }
 
   spawn(x, y, z, vx, vy, vz, value, tier = 0) {
@@ -111,7 +162,7 @@ export class Coins {
     const b = this.world.createRigidBody(desc);
     const sz = TIERS[tier].size;
     this.world.createCollider(RAPIER.ColliderDesc.roundCylinder(COIN_HALF * sz - 0.025, COIN_RAD * sz - 0.025, 0.025)
-      .setFriction(0.55).setRestitution(0.12).setDensity(2), b);
+      .setFriction(0.55).setRestitution(0.12).setDensity(2).setCollisionGroups(G_COIN), b);
     this.body[i] = b; this.value[i] = value; this.tier[i] = tier; this.alive[i] = 1; this.frozen[i] = 0; this.rest[i] = 0; this.age[i] = 0;
     this.px[i] = x; this.py[i] = y; this.pz[i] = z; this.lx[i] = x; this.ly[i] = y; this.lz[i] = z;
     if (i + 1 > this.maxIndex) this.maxIndex = i + 1;
@@ -158,13 +209,18 @@ export class Coins {
     let thawed = 0;
     for (let i = 0; i < this.maxIndex; i++) {
       if (!alive[i]) continue;
+      let near = false;
+      for (const s of spots) {
+        const dx = px[i] - s.x, dz = pz[i] - s.z;
+        if (dx * dx + dz * dz < s.r * s.r) { near = true; break; }
+      }
+      this.near[i] = near ? 1 : 0;
       if (frozen[i]) {
-        for (const s of spots) {
-          const dx = px[i] - s.x, dz = pz[i] - s.z;
-          if (dx * dx + dz * dz < s.r * s.r) { this.thaw(i); thawed++; break; }
-        }
+        if (near) { this.thaw(i); thawed++; }
         continue;
       }
+      // coins around the dozer are never frozen: frozen (fixed) bodies don't collide with it
+      if (near) { rest[i] = 0; continue; }
       const b = body[i], v = b.linvel(), a = b.angvel();
       if (v.x * v.x + v.y * v.y + v.z * v.z < 0.36 && a.x * a.x + a.y * a.y + a.z * a.z < 6.0 && !this.onBelt(px[i], py[i], pz[i])) {
         rest[i] += dt;
@@ -174,8 +230,13 @@ export class Coins {
     // coins shoved along the ground knock the frozen coins they run into back to life
     const fast = [];
     for (let i = 0; i < this.maxIndex; i++) {
-      if (!alive[i] || frozen[i] || py[i] > 1.4) continue;
-      if (this.age[i] < 1.2) continue; // coins still raining from the crusher don't wake the heap
+      if (!alive[i] || frozen[i]) continue;
+      // every live coin in the dozer's working area wakes the coins it touches, so the heap
+      // in front of the blade gives way layer by layer instead of acting like a wall
+      let work = false;
+      for (const s of spots) { const dx = px[i] - s.x, dz = pz[i] - s.z, R = s.r + 4; if (dx * dx + dz * dz < R * R) { work = true; break; } }
+      if (work) { fast.push(i); continue; }
+      if (py[i] > 1.4 || this.age[i] < 1.2) continue; // coins still raining from the crusher don't wake the heap
       const v = body[i].linvel();
       if (v.x * v.x + v.z * v.z > 1.0 && Math.abs(v.y) < 1.5) fast.push(i);
     }
@@ -219,6 +280,7 @@ export class Coins {
     // at most one step per frame: under load the coins slow down instead of spiralling
     if (this.acc >= STEP * 0.9) {
       this.applyBelts();
+      this.driveDozer();
       this.world.step();
       this.clampSpeeds();
       this.acc = Math.max(0, Math.min(this.acc - STEP, STEP)); n = 1;
@@ -237,21 +299,50 @@ export class Coins {
       const v = b.linvel(), t = b.translation();
       // explosion guard: a coin pinched between the blade and a wall/heap gets a huge
       // depenetration kick in a single step; put it back where it was instead
-      if (v.x * v.x + v.y * v.y + v.z * v.z > 256) {
+      if (v.x * v.x + v.y * v.y + v.z * v.z > 22 * 22) {
         b.setTranslation({ x: this.lx[i], y: this.ly[i], z: this.lz[i] }, false);
         b.setLinvel({ x: 0, y: 0, z: 0 }, false); b.setAngvel({ x: 0, y: 0, z: 0 }, false);
         continue;
       }
+      if (t.y < -0.15) { // rammed into the floor: pop it back on top
+        b.setTranslation({ x: t.x, y: 0.4, z: t.z }, false);
+        b.setLinvel({ x: 0, y: 0, z: 0 }, false);
+        continue;
+      }
+      if (this.unwall(b, t)) continue;
       this.lx[i] = t.x; this.ly[i] = t.y; this.lz[i] = t.z;
       if (age[i] < 0.6) continue; // fresh out of the crusher: let it fly
       let { x, y, z } = v, ch = false;
       const h = Math.hypot(x, z);
-      if (h > 7.5) { x *= 7.5 / h; z *= 7.5 / h; ch = true; }
+      if (h > 12) { x *= 12 / h; z *= 12 / h; ch = true; }
       if (y > 2.2) { y = 2.2; ch = true; }
+      if (y < -14) { y = -14; ch = true; }
       if (ch) b.setLinvel({ x, y, z }, false);
       const a = b.angvel(), am = Math.hypot(a.x, a.y, a.z);
       if (am > 18) { const k = 18 / am; b.setAngvel({ x: a.x * k, y: a.y * k, z: a.z * k }, false); }
     }
+  }
+
+  // Walls always win: a coin the blade has crushed into a wall is put back on the play side and
+  // lifted, so it spills over the blade instead of being squeezed through the wall.
+  unwall(b, t) {
+    const R = 0.3; // placement margin; detection = coin centre actually inside the wall
+    for (const w of this.wallRects) {
+      if (t.x < w.x0 || t.x > w.x1 || t.z < w.z0 || t.z > w.z1 || t.y > 4) continue;
+      let x = t.x, z = t.z;
+      if (w.out) {
+        if (w.out[0] > 0) x = w.x1 + R + 0.05; else if (w.out[0] < 0) x = w.x0 - R - 0.05;
+        if (w.out[1] > 0) z = w.z1 + R + 0.05; else if (w.out[1] < 0) z = w.z0 - R - 0.05;
+      } else {
+        const l = t.x - w.x0, r = w.x1 - t.x, f = t.z - w.z0, k = w.z1 - t.z, m = Math.min(l, r, f, k);
+        if (m === l) x = w.x0 - R - 0.05; else if (m === r) x = w.x1 + R + 0.05; else if (m === f) z = w.z0 - R - 0.05; else z = w.z1 + R + 0.05;
+      }
+      b.setTranslation({ x, y: t.y + 0.25, z }, true);
+      const v = b.linvel();
+      b.setLinvel({ x: v.x * 0.2, y: Math.max(v.y, 1.5), z: v.z * 0.2 }, true);
+      return true;
+    }
+    return false;
   }
 
   applyBelts() {
