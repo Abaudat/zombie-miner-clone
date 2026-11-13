@@ -139,7 +139,7 @@ export class Dozer {
     ];
   }
 
-  step(dt, inp, physics, loadContacts) {
+  step(dt, inp, physics, loadContacts, belts = []) {
     // load slows the dozer down a bit: feel the weight of the pile
     this.load += (loadContacts - this.load) * Math.min(1, dt * 6);
     const loadF = Math.max(0.55, 1 - this.load * 0.0035);
@@ -155,8 +155,11 @@ export class Dozer {
     }
     const k = desired > this.speed ? 3.5 : 7;
     this.speed += (desired - this.speed) * Math.min(1, dt * k);
-    const nx = this.x + Math.sin(this.heading) * this.speed * dt;
-    const nz = this.z + Math.cos(this.heading) * this.speed * dt;
+    let nx = this.x + Math.sin(this.heading) * this.speed * dt;
+    let nz = this.z + Math.cos(this.heading) * this.speed * dt;
+    for (const b of belts) { // ride the conveyor
+      if (this.x > b.x0 && this.x < b.x1 && this.z > b.z0 && this.z < b.z1) { nx += b.dx * b.speed * 0.6 * dt; nz += b.dz * b.speed * 0.6 * dt; }
+    }
     const [cx, cz] = physics.collideCircle(nx, nz, 1.35, MASK_DOZER);
     // front circle (blade area) also stays inside walls
     const fx = Math.sin(this.heading) * 1.4, fz = Math.cos(this.heading) * 1.4;

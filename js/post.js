@@ -50,6 +50,13 @@ export class Post {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: lowEnd ? 2 : 4 });
     this.composer = new EffectComposer(renderer, rt);
     this.composer.addPass(new RenderPass(scene, camera));
+    // clamp extreme specular highlights so sun glints on faceted gems don't bloom across the screen
+    this.composer.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: GradeShader.vertexShader,
+      fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main() { vec4 c = texture2D(tDiffuse, vUv); float m = max(c.r, max(c.g, c.b)); c.rgb *= m > 2.5 ? 2.5 / m : 1.0; gl_FragColor = c; }`,
+    }));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.4, 0.55, 0.92);
     this.composer.addPass(this.bloom);
     this.grade = new ShaderPass(GradeShader);

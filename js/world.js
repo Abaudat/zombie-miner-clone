@@ -371,12 +371,14 @@ export class World {
       add(k, C.x0 - C.pillarW, C.x0, C.s0 - 0.4, C.s1 + 0.4, MASK_ALL, 'none');
       add(k, C.x1, C.x1 + C.pillarW, C.s0 - 0.4, C.s1 + 0.4, MASK_ALL, 'none');
       add(k, C.x0, C.x1, C.s0, C.s1, MASK_COIN | MASK_DOZER, 'none');
-      // conveyor lane
+      // conveyor lane: open on the islands (push coins on/off, drive on it),
+      // railed over the chasm, and only coins may cross the island edges
       if (conv) {
         const B = L.belt;
-        add(k, B.x0 - 0.4, B.x0, B.s0 - 0.4, B.s1, MASK_ALL, 'metal');
-        add(k, B.x1, B.x1 + 0.4, B.s0 - 0.4, B.s1, MASK_ALL, 'metal');
-        add(k, B.x0, B.x1, B.s0 - 0.4, B.s0, MASK_ALL, 'metal');
+        add(k, B.x0 - 0.35, B.x0, F.s1, P.s0, MASK_ALL, 'metal');
+        add(k, B.x1, B.x1 + 0.35, F.s1, P.s0, MASK_ALL, 'metal');
+        add(k, B.x0, B.x1, F.s1, F.s1 + T, MASK_GEM | MASK_DOZER, 'none');
+        add(k, B.x0, B.x1, P.s0 - T, P.s0, MASK_GEM | MASK_DOZER, 'none');
       }
     }
     this.walls = walls;
@@ -484,8 +486,8 @@ export class World {
       if (!state.conveyors[k]) continue;
       const g = new THREE.Group();
       const len = B.s1 - B.s0;
-      const belt = new THREE.Mesh(new THREE.BoxGeometry(B.x1 - B.x0, 0.12, len), beltMat);
-      belt.position.set((B.x0 + B.x1) / 2, 0.02, zw(k, (B.s0 + B.s1) / 2));
+      const belt = new THREE.Mesh(new THREE.BoxGeometry(B.x1 - B.x0, 0.1, len), beltMat);
+      belt.position.set((B.x0 + B.x1) / 2, 0.0, zw(k, (B.s0 + B.s1) / 2));
       belt.receiveShadow = true;
       this.beltTex.repeat.set(1, len / 2);
       g.add(belt);
@@ -496,13 +498,11 @@ export class World {
         const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 9, 8), this.metalMat);
         leg.position.set((B.x0 + B.x1) / 2, -4.8, zw(k, s)); g.add(leg);
       }
-      // hopper next to crusher
-      const hop = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 0.8, 1.1, 4, 1, true), this.metalMat);
-      hop.rotation.y = Math.PI / 4; hop.position.set((B.x0 + B.x1) / 2, 1.0, zw(k, B.s0 + 0.6));
-      hop.material.side = THREE.DoubleSide;
-      g.add(hop);
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 5.2, 10), std(ZONES[k].pillar, 0.4, 0.2));
-      pipe.rotation.z = Math.PI / 2; pipe.position.set(7.4, 2.6, zw(k, 29)); g.add(pipe);
+      // end rollers
+      for (const s of [B.s0, B.s1]) {
+        const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, B.x1 - B.x0 + 0.2, 12), this.metalMat);
+        rl.rotation.z = Math.PI / 2; rl.position.set((B.x0 + B.x1) / 2, -0.06, zw(k, s)); g.add(rl);
+      }
       g.traverse(c => { if (c.isMesh) c.castShadow = true; });
       this.scene.add(g); this.conveyors.push(g);
     }

@@ -186,7 +186,8 @@ export class Physics {
       if (py[i] <= r[i] + 0.03) { x *= fr; z *= fr; }
       x *= 0.998; z *= 0.998;
       const s2 = x * x + y * y + z * z;
-      const vmax = kind[i] === 1 ? 9 : 14;
+      if (kind[i] === 0 && y > 4.5) y = 4.5; // gems shoved by the blade must not launch over the dozer
+      const vmax = kind[i] === 1 ? 9 : 12;
       if (s2 > vmax * vmax) { const k = vmax / Math.sqrt(s2); x *= k; y *= k; z *= k; }
       vx[i] = x; vy[i] = y; vz[i] = z;
       if (s2 < 0.03) {

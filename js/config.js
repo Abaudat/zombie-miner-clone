@@ -10,7 +10,7 @@ export const LAYOUT = {
   bridge: { s0: 44, s1: 54 },                  // internal bridge
   P: { x0: -15, x1: 15, s0: 54, s1: 74 },       // pad island
   nz: { s0: 74, s1: 86, w: 6 },                 // bridge to next zone
-  belt: { x0: 9, x1: 11, s0: 30, s1: 58 },      // conveyor lane
+  belt: { x0: 8.4, x1: 11.6, s0: 34, s1: 58 },  // conveyor lane (crosses the chasm)
 };
 
 export const ZONES = [
@@ -20,10 +20,10 @@ export const ZONES = [
   { id: 'lava', value: 10, gemR: 0.31, gemCount: 1300, gem: 'crystal', gemColor: 0xc23dff, gemEmissive: 0x5a0a99,
     ground: 0x4a3f45, ground2: 0x41373c, side: 0x261d22, rim: 0x5a4a52, rocks: true, abyss: 0xff5a1a, lava: true, fog: 0x4a2620,
     smoke: 0xffd6c0, pillar: 0xff7a1a, decor: 'lava' },
-  { id: 'ice', value: 100, gemR: 0.36, gemCount: 1200, gem: 'orb', gemColor: 0xe6ebf2, gemEmissive: 0x000000,
-    ground: 0xdcebf5, ground2: 0xc9e0ef, side: 0x7fa6c6, rim: 0xc8e6f8, rocks: true, abyss: 0x0f3f6e, fog: 0x8fb4d0,
-    smoke: 0xffffff, pillar: 0x3fa3ff, decor: 'ice' },
-  { id: 'jungle', value: 1000, gemR: 0.42, gemCount: 1100, gem: 'emerald', gemColor: 0x12d070, gemEmissive: 0x02552a,
+  { id: 'ice', value: 100, gemR: 0.36, gemCount: 1200, gem: 'orb', gemColor: 0xf2f5fa, gemEmissive: 0x000000,
+    ground: 0x41607d, ground2: 0x3a5772, side: 0x22374d, rim: 0x6f93b3, rocks: true, abyss: 0x0a2138, fog: 0x2b4560,
+    smoke: 0x9fc4e0, pillar: 0x3fa3ff, decor: 'ice' },
+  { id: 'jungle', value: 1000, gemR: 0.42, gemCount: 1100, gem: 'emerald', gemColor: 0x10b862, gemEmissive: 0x02552a,
     ground: 0x6f7a4c, ground2: 0x626d42, side: 0x3f4a2e, rim: 0x8c917c, rocks: true, abyss: 0x0f3320, fog: 0x3f5a35,
     smoke: 0xd8f0d0, pillar: 0xd6b16a, decor: 'jungle' },
   { id: 'vault', value: 10000, gemR: 0.5, gemCount: 1000, gem: 'nugget', gemColor: 0xffc23a, gemEmissive: 0x3a2000,
@@ -35,13 +35,13 @@ export const COIN_R = 0.24;
 
 // Upgrade tables (global levels)
 export const BLADE_W = [2.6, 3.5, 4.4, 5.3, 6.2, 7.1];
-export const SPEEDS = [5.6, 6.8, 8.0, 9.2, 10.4, 11.6];
+export const SPEEDS = [5.6, 6.6, 7.6, 8.6];
 export const MULTS = [10, 20, 30, 50];
 export const BRIDGE_W = [3.2, 4.6, 6.0, 7.4];
 
 export const UPG = {
   blade: { max: 5, base: 120, growth: 1.55 },
-  speed: { max: 5, base: 100, growth: 1.55 },
+  speed: { max: 3, base: 100, growth: 1.9 },
   crusher: { max: 3, base: 450, growth: 2.0 },
   bridge: { max: 3, base: 160, growth: 1.7 },
 };

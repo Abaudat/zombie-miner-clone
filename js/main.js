@@ -32,6 +32,7 @@ try {
   if (raw) { const s = JSON.parse(raw); if (s && s.v === 1) { state = Object.assign(defaultState(), s); state.justBuilt = -1; hasSave = !state.won && (s.stats.crushed > 0 || s.unlocked > 0); } }
 } catch (_) { /* storage unavailable */ }
 if (state.won) state = defaultState();
+state.levels.speed = Math.min(state.levels.speed, UPG.speed.max);
 
 function save() {
   state.dozer = { x: dozer.x, z: dozer.z, h: dozer.heading };
@@ -71,7 +72,7 @@ sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 scene.add(sun); scene.add(sun.target);
 
 // ---------- systems ----------
-const physics = new Physics(9600);
+const physics = new Physics(12000);
 const post = new Post(renderer, scene, camera, isTouch);
 const world = new World(scene);
 const bodies = new Bodies(scene, physics);
@@ -104,10 +105,10 @@ function padVisible(p) {
 }
 function drawPad(p) {
   p.setVisible(padVisible(p));
+  p.needsDraw = false;
   if (!p.visible) return;
   const lv = UPG[p.type] ? `${t('lv')} ${state.levels[p.type] + 1}` : '';
   p.draw(t(p.type), padCost(p), lv);
-  p.needsDraw = false;
 }
 function redrawPads() { for (const p of pads) drawPad(p); }
 
@@ -125,7 +126,7 @@ function rebuildWorld() {
   }));
   physics.belts = [];
   ZONES.forEach((_, k) => {
-    if (state.conveyors[k]) physics.belts.push({ x0: LAYOUT.belt.x0, x1: LAYOUT.belt.x1, z0: zw(k, LAYOUT.belt.s1), z1: zw(k, LAYOUT.belt.s0), dx: 0, dz: -1, speed: 6 });
+    if (state.conveyors[k]) physics.belts.push({ x0: LAYOUT.belt.x0, x1: LAYOUT.belt.x1, z0: zw(k, LAYOUT.belt.s1), z1: zw(k, LAYOUT.belt.s0), dx: 0, dz: -1, speed: 5 });
   });
 }
 
@@ -223,6 +224,10 @@ let acc = 0;
 
 function zoneAt(z) { return Math.max(0, Math.min(ZONES.length - 1, Math.floor(-z / ZONE_LEN))); }
 
+// Each crushed gem pours out (multiplier) coins, worth one zone-value unit each.
+// They are queued and streamed out of the crusher so big hauls become a coin avalanche.
+const spout = [];
+const COIN_SOFT_CAP = 3200;
 function handleCrushed() {
   const list = physics.crushed;
   if (!list.length) return;
@@ -231,37 +236,43 @@ function handleCrushed() {
     state.stats.crushed++;
     if (!state.hints.crush) { state.hints.crush = 1; updateHint(); }
     const total = e.value * mult;
-    const k = e.k;
-    const n = physics.count[COIN] > 1500 ? 1 : 2;
-    for (let c = 0; c < n; c++) {
-      let x, y, s, vx, vy, vs;
-      if (state.conveyors[k]) {
-        x = 10 + (Math.random() - 0.5) * 1.2; s = 31 + Math.random() * 1.2; y = 1.4 + Math.random();
-        vx = 0; vy = 0; vs = 2;
-      } else {
-        x = Math.max(-3.6, Math.min(3.6, e.x)) + (Math.random() - 0.5) * 0.8; s = 30.15 + Math.random() * 0.5; y = 0.5 + Math.random() * 0.8;
-        vx = (Math.random() - 0.5) * 2.2; vy = 2 + Math.random() * 3.5; vs = 2.8 + Math.random() * 3.2;
-      }
-      const id = bodies.spawnCoin(x, y, zw(k, s), vx, vy, -vs, total / n, k);
-      if (id < 0) { // budget full: fold the value into an existing coin
-        for (let tries = 0; tries < 20; tries++) {
-          const j = (Math.random() * physics.maxIndex) | 0;
-          if (physics.alive[j] && physics.kind[j] === COIN) { physics.value[j] += total / n; break; }
-        }
-      }
-    }
+    spout.push({ k: e.k, x: Math.max(-3.4, Math.min(3.4, e.x)), n: mult, v: total / mult });
     fx.shards(e.x, e.y + 0.3, e.z, ZONES[e.zone].gemColor, 3);
     sound.crush();
-    sound.coinSpill();
-    popAcc[k] += total;
+    popAcc[e.k] += total;
   }
   list.length = 0;
 }
 
+function pourCoins(dt) {
+  if (!spout.length) return;
+  // stream rate grows with the backlog so a huge haul never takes forever
+  let backlog = 0; for (const q of spout) backlog += q.n;
+  let budget = Math.ceil(dt * Math.max(260, backlog * 1.2));
+  let chimed = false;
+  while (budget > 0 && spout.length) {
+    const q = spout[0];
+    // when the world is flooded with coins, pour fewer, heavier ones
+    const pack = physics.count[COIN] > COIN_SOFT_CAP ? Math.min(q.n, 10) : 1;
+    const x = q.x + (Math.random() - 0.5) * 1.6, s = 30.15 + Math.random() * 0.5, y = 0.5 + Math.random() * 0.8;
+    const vx = (Math.random() - 0.5) * 2.4, vy = 2 + Math.random() * 3.5, vs = 2.4 + Math.random() * 3.6;
+    const id = bodies.spawnCoin(x, y, zw(q.k, s), vx, vy, -vs, q.v * pack, q.k);
+    if (id < 0) { // hard cap: fold the value into an existing coin
+      for (let tries = 0; tries < 20; tries++) {
+        const j = (Math.random() * physics.maxIndex) | 0;
+        if (physics.alive[j] && physics.kind[j] === COIN) { physics.value[j] += q.v * pack; break; }
+      }
+    }
+    if (!chimed) { sound.coinSpill(); chimed = true; }
+    q.n -= pack; budget--;
+    if (q.n <= 0) spout.shift();
+  }
+}
+
 function absorbCoins() {
-  const { maxIndex, alive, awake, kind, px, pz } = physics;
+  const { maxIndex, alive, kind, px, pz } = physics;
   for (let i = 0; i < maxIndex; i++) {
-    if (!alive[i] || !awake[i] || kind[i] !== COIN) continue;
+    if (!alive[i] || kind[i] !== COIN) continue;
     const x = px[i], z = pz[i];
     const k = zoneAt(z);
     const s = -z - k * ZONE_LEN;
@@ -422,9 +433,10 @@ function frame(now) {
     let steps = 0;
     const inp = input.get();
     while (acc >= stepDt && steps < 4) {
-      dozer.step(stepDt, inp, physics, physics.kinContacts);
+      dozer.step(stepDt, inp, physics, physics.kinContacts, physics.belts);
       physics.step(stepDt);
       handleCrushed();
+      pourCoins(stepDt);
       acc -= stepDt; steps++;
     }
     if (steps === 4) acc = 0;
@@ -481,8 +493,7 @@ function frame(now) {
     popT = 0.28;
     popAcc.forEach((v, k) => {
       if (v > 0) {
-        const s = state.conveyors[k] ? 31 : 30;
-        fx.popup('+' + fmt(v), state.conveyors[k] ? 10 : (Math.random() - 0.5) * 3, 5, zw(k, s), 'gold');
+        fx.popup('+' + fmt(v), (Math.random() - 0.5) * 3, 5, zw(k, 30), 'gold');
         popAcc[k] = 0;
       }
     });
@@ -499,7 +510,7 @@ function frame(now) {
   if (mode === 'play') sound.clatter(physics.kinContacts * Math.min(1, Math.abs(dozer.speed) / 3), dt, curZone);
 
   dozer.updateVisual(dt, time);
-  bodies.sync();
+  bodies.sync(dt);
   world.update(dt);
   fx.update(dt, W, H);
   updateAmbience();
