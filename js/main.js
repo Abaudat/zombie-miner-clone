@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ZONES, ZONE_LEN, LAYOUT, PADS, UPG, BLADE_W, SPEEDS, MULTS, upgradeCost, fmt, zw } from './config.js';
-import { Physics, COIN } from './physics.js';
+import { Physics } from './physics.js';
+import { Coins, TIERS } from './coins.js';
 import { World } from './world.js';
 import { Bodies } from './bodies.js';
 import { Dozer } from './dozer.js';
@@ -72,7 +73,8 @@ sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 scene.add(sun); scene.add(sun.target);
 
 // ---------- systems ----------
-const physics = new Physics(12000);
+const physics = new Physics(8000);
+let coins = null; // rigid-body coins, created in boot() once the physics WASM is loaded
 const post = new Post(renderer, scene, camera, isTouch);
 const world = new World(scene);
 const bodies = new Bodies(scene, physics);
@@ -119,7 +121,9 @@ function applyLevels() {
 }
 
 function rebuildWorld() {
-  physics.setWalls(world.rebuild(state));
+  const walls = world.rebuild(state);
+  physics.setWalls(walls);
+  coins.setWalls(walls);
   physics.killZones = ZONES.map((_, k) => ({
     k, x0: LAYOUT.crusher.x0, x1: LAYOUT.crusher.x1,
     z0: zw(k, LAYOUT.crusher.s1 + 0.15), z1: zw(k, LAYOUT.crusher.s0 - 0.15),
@@ -128,6 +132,7 @@ function rebuildWorld() {
   ZONES.forEach((_, k) => {
     if (state.conveyors[k]) physics.belts.push({ x0: LAYOUT.belt.x0, x1: LAYOUT.belt.x1, z0: zw(k, LAYOUT.belt.s1), z1: zw(k, LAYOUT.belt.s0), dx: 0, dz: -1, speed: 5 });
   });
+  coins.belts = physics.belts;
 }
 
 function spawnFields() {
@@ -189,7 +194,7 @@ function updateHint(force) {
   if (mode === 'play') {
     if (!state.hints.drive) key = 'drive';
     else if (!state.hints.crush) key = 'hintCrush';
-    else if (!state.hints.pads && physics.count[COIN] > 15) key = 'hintPads';
+    else if (!state.hints.pads && coins.count > 15) key = 'hintPads';
   }
   if (key === hintKey && !force) return;
   hintKey = key;
@@ -227,7 +232,7 @@ function zoneAt(z) { return Math.max(0, Math.min(ZONES.length - 1, Math.floor(-z
 // Each crushed gem pours out (multiplier) coins, worth one zone-value unit each.
 // They are queued and streamed out of the crusher so big hauls become a coin avalanche.
 const spout = [];
-const COIN_SOFT_CAP = 3200;
+const COIN_SOFT_CAP = isTouch ? 260 : 450;
 function handleCrushed() {
   const list = physics.crushed;
   if (!list.length) return;
@@ -236,7 +241,17 @@ function handleCrushed() {
     state.stats.crushed++;
     if (!state.hints.crush) { state.hints.crush = 1; updateHint(); }
     const total = e.value * mult;
-    spout.push({ k: e.k, x: Math.max(-3.4, Math.min(3.4, e.x)), n: mult, v: total / mult });
+    // break the payout into tiered coins: up to ~10 coins per gem (3 when the field is crowded)
+    const unit = ZONES[e.k].value, units = Math.round(total / unit);
+    const maxPer = coins.count > COIN_SOFT_CAP ? 3 : 10;
+    let top = 0;
+    while (top < TIERS.length - 1 && Math.ceil(units / TIERS[top].v) > maxPer) top++;
+    let rem = units;
+    for (let t = top; t >= 0 && rem > 0; t--) {
+      const n = Math.floor(rem / TIERS[t].v);
+      for (let c = 0; c < n; c++) spout.push({ k: e.k, x: Math.max(-3.4, Math.min(3.4, e.x)), t, v: TIERS[t].v * unit });
+      rem -= n * TIERS[t].v;
+    }
     fx.shards(e.x, e.y + 0.3, e.z, ZONES[e.zone].gemColor, 3);
     sound.crush();
     popAcc[e.k] += total;
@@ -246,41 +261,33 @@ function handleCrushed() {
 
 function pourCoins(dt) {
   if (!spout.length) return;
-  // stream rate grows with the backlog so a huge haul never takes forever
-  let backlog = 0; for (const q of spout) backlog += q.n;
-  let budget = Math.ceil(dt * Math.max(260, backlog * 1.2));
+  let budget = Math.ceil(dt * Math.min(200, Math.max(90, spout.length * 0.5)));
   let chimed = false;
-  while (budget > 0 && spout.length) {
-    const q = spout[0];
-    // when the world is flooded with coins, pour fewer, heavier ones
-    const pack = physics.count[COIN] > COIN_SOFT_CAP ? Math.min(q.n, 10) : 1;
-    const x = q.x + (Math.random() - 0.5) * 1.6, s = 30.15 + Math.random() * 0.5, y = 0.5 + Math.random() * 0.8;
+  while (budget-- > 0 && spout.length) {
+    const q = spout.shift();
+    const x = q.x + (Math.random() - 0.5) * 1.6, s = 30.3 + Math.random() * 0.5, y = 0.6 + Math.random() * 0.8;
     const vx = (Math.random() - 0.5) * 2.4, vy = 2 + Math.random() * 3.5, vs = 2.4 + Math.random() * 3.6;
-    const id = bodies.spawnCoin(x, y, zw(q.k, s), vx, vy, -vs, q.v * pack, q.k);
+    const id = coins.spawn(x, y, zw(q.k, s), vx, vy, -vs, q.v, q.t);
     if (id < 0) { // hard cap: fold the value into an existing coin
-      for (let tries = 0; tries < 20; tries++) {
-        const j = (Math.random() * physics.maxIndex) | 0;
-        if (physics.alive[j] && physics.kind[j] === COIN) { physics.value[j] += q.v * pack; break; }
-      }
+      const j = coins.randomAlive();
+      if (j >= 0) coins.value[j] += q.v;
     }
     if (!chimed) { sound.coinSpill(); chimed = true; }
-    q.n -= pack; budget--;
-    if (q.n <= 0) spout.shift();
   }
 }
 
 function absorbCoins() {
-  const { maxIndex, alive, kind, px, pz } = physics;
+  const { maxIndex, alive, px, pz } = coins;
   for (let i = 0; i < maxIndex; i++) {
-    if (!alive[i] || kind[i] !== COIN) continue;
+    if (!alive[i]) continue;
     const x = px[i], z = pz[i];
     const k = zoneAt(z);
     const s = -z - k * ZONE_LEN;
     if (s < LAYOUT.P.s0 || s > LAYOUT.P.s1) continue;
     for (const p of padsByZone[k]) {
       if (!p.contains(x, z)) continue;
-      const v = physics.value[i];
-      physics.remove(i);
+      const v = coins.value[i];
+      coins.remove(i);
       p.fill += v; p.pulse = 1; p.needsDraw = true;
       sound.chime();
       if (!state.hints.pads) { state.hints.pads = 1; updateHint(); }
@@ -440,6 +447,10 @@ function frame(now) {
       acc -= stepDt; steps++;
     }
     if (steps === 4) acc = 0;
+    coins.setKinematic(physics.kin);
+    const bl = physics.kin[0];
+    coins.manage(dt, [{ x: bl.x, z: bl.z, r: bl.hx + 1.6 }, { x: dozer.x, z: dozer.z, r: 2.3 }]);
+    coins.step(dt);
     absorbCoins();
     state.stats.time += dt;
     if (!state.hints.drive && Math.hypot(dozer.x - lastX, dozer.z - lastZ) > 0.01) {
@@ -460,6 +471,8 @@ function frame(now) {
     physics.kin = [];
     if (mode === 'ending') {
       physics.step(1 / 60);
+      coins.manage(dt, []);
+      coins.step(dt);
       endT += dt;
       if (endT < 4 && Math.random() < dt * 6) {
         const st = world.statue.position;
@@ -468,9 +481,9 @@ function frame(now) {
       }
       if (endT < 3.2) { // golden coin fountain from the statue
         const st = world.statue.position;
-        for (let c = 0; c < 4; c++) {
+        for (let c = 0; c < (Math.random() < 0.6 ? 1 : 0); c++) {
           const a = Math.random() * 6.28, sp = 2 + Math.random() * 4;
-          bodies.spawnCoin(st.x + (Math.random() - 0.5), 5, st.z + 4.6, Math.cos(a) * sp, 4 + Math.random() * 5, Math.abs(Math.sin(a)) * sp + 2, 0, 4);
+          coins.spawn(st.x + (Math.random() - 0.5), 5, st.z + 4.6, Math.cos(a) * sp, 4 + Math.random() * 5, Math.abs(Math.sin(a)) * sp + 2, 0, 2 + (c & 1));
         }
       }
       if (endT > 3.5 && ui.ending.hidden) showEnding();
@@ -510,7 +523,8 @@ function frame(now) {
   if (mode === 'play') sound.clatter(physics.kinContacts * Math.min(1, Math.abs(dozer.speed) / 3), dt, curZone);
 
   dozer.updateVisual(dt, time);
-  bodies.sync(dt);
+  bodies.sync();
+  coins.sync();
   world.update(dt);
   fx.update(dt, W, H);
   updateAmbience();
@@ -521,6 +535,7 @@ function frame(now) {
 // ---------- boot ----------
 async function boot() {
   try { await Promise.race([document.fonts.load("40px 'Lilita One'"), new Promise(r => setTimeout(r, 2500))]); } catch (_) {}
+  coins = await Coins.create(scene, 900);
   rebuildWorld();
   spawnFields();
   applyLevels();
@@ -543,6 +558,6 @@ boot().catch(e => console.error("boot failed", e && e.stack || e));
 
 // debug hooks for testing
 if (/[?&]dev/.test(location.search)) {
-  window.__pd = { state, physics, dozer, pads, complete, bodies, input, post };
+  window.__pd = { state, physics, dozer, pads, complete, bodies, input, post, get coins() { return coins; } };
   import('./dev.js').then(m => m.install(window.__pd));
 }
