@@ -139,20 +139,7 @@ export class Dozer {
     ];
   }
 
-  // does the blade (front edge + wing tips) poke into a wall at this pose?
-  bladeHits(x, z, h, physics) {
-    const s = Math.sin(h), c = Math.cos(h), w = this.bladeW / 2;
-    const pts = [[-w, 1.95], [0, 1.95], [w, 1.95], [-w * 0.5, 1.95], [w * 0.5, 1.95], [-(w + 0.27), 2.38], [w + 0.27, 2.38]];
-    for (const [lx, lz] of pts) {
-      const px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
-      const [qx, qz] = physics.collideCircle(px, pz, 0.3, MASK_DOZER);
-      if (qx !== px || qz !== pz) return true;
-    }
-    return false;
-  }
-
   step(dt, inp, physics, loadContacts, belts = []) {
-    const h0 = this.heading;
     // load slows the dozer down a bit: feel the weight of the pile
     this.load += (loadContacts - this.load) * Math.min(1, dt * 6);
     const loadF = Math.max(0.55, 1 - this.load * 0.0035);
@@ -180,16 +167,8 @@ export class Dozer {
     // front circle (blade area) also stays inside walls
     const fx = Math.sin(this.heading) * 1.4, fz = Math.cos(this.heading) * 1.4;
     const [qx, qz] = physics.collideCircle(cx + fx, cz + fz, 0.9, MASK_DOZER);
-    let tx = qx - fx, tz = qz - fz;
-    // never let the blade swing or drive into a wall: coins pinched there would explode out
-    if (this.bladeHits(tx, tz, this.heading, physics) && !this.bladeHits(this.x, this.z, h0, physics)) {
-      if (!this.bladeHits(tx, tz, h0, physics)) this.heading = h0;
-      else if (!this.bladeHits(this.x, this.z, this.heading, physics)) { tx = this.x; tz = this.z; }
-      else { tx = this.x; tz = this.z; this.heading = h0; }
-      this.speed *= 0.5;
-    }
-    const ddx = tx - this.x, ddz = tz - this.z;
-    this.x = tx; this.z = tz;
+    const ddx = qx - fx - this.x, ddz = qz - fz - this.z;
+    this.x = qx - fx; this.z = qz - fz;
     physics.kin = this.colliders();
     for (const c of physics.kin) if (c.pusher) { c.dx = ddx; c.dz = ddz; }
   }
