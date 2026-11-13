@@ -454,10 +454,10 @@ export class World {
         const p = new THREE.Mesh(plank, i % 2 ? this.woodMat : this.woodDark);
         p.scale.x = w + 0.9;
         const s = s0 - 1 + (i + 0.5) * ((s1 - s0 + 2) / n);
-        p.position.set(0, -0.14, zw(k, s));
+        p.position.set(0, -0.115, zw(k, s));
         p.rotation.y = (Math.sin(i * 12.9) * 0.03);
         p.receiveShadow = true; p.castShadow = true;
-        if (animate) { p.userData.target = -0.14; p.userData.delay = i * 0.06; p.position.y = 14; p.userData.t = 0; }
+        if (animate) { p.userData.target = -0.115; p.userData.delay = i * 0.06; p.position.y = 14; p.userData.t = 0; }
         g.add(p);
       }
       for (const sx of [-1, 1]) {
