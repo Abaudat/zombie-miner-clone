@@ -36,7 +36,7 @@ At the end of the vault waits a giant **Golden Cat**. Fill it. See what happens.
 | | |
 |---|---|
 | 📱 Phone | Touch anywhere and drag — floating joystick |
-| ⌨️ Desktop | WASD / arrow keys, or click-and-drag |
+| ⌨️ Desktop | W/S drive forward/back, A/D turn (or arrow keys) — click-and-drag also works |
 
 Progress is saved automatically in your browser.
 

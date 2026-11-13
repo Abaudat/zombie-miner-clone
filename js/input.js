@@ -43,13 +43,14 @@ export class Input {
   release() { this.pid = null; this.jx = this.jy = 0; this.joy.classList.remove('on'); }
 
   get() {
-    let x = 0, y = 0;
+    // keyboard = tank controls: W/S throttle forward/back, A/D turn
+    let turn = 0, throttle = 0;
     const k = this.keys;
-    if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
-    if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
-    if (k.has('KeyW') || k.has('ArrowUp')) y += 1;
-    if (k.has('KeyS') || k.has('ArrowDown')) y -= 1;
-    if (x || y) { const m = Math.hypot(x, y); return { x: x / m, y: y / m, mag: 1 }; }
+    if (k.has('KeyA') || k.has('ArrowLeft')) turn += 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) turn -= 1;
+    if (k.has('KeyW') || k.has('ArrowUp')) throttle += 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) throttle -= 1;
+    if (turn || throttle) return { tank: true, turn, throttle, x: 0, y: 0, mag: 1 };
     const m = Math.hypot(this.jx, this.jy);
     if (m < 0.15) return { x: 0, y: 0, mag: 0 };
     return { x: this.jx / m, y: this.jy / m, mag: Math.min(1, (m - 0.15) / 0.75) };

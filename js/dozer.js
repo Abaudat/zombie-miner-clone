@@ -144,7 +144,10 @@ export class Dozer {
     this.load += (loadContacts - this.load) * Math.min(1, dt * 6);
     const loadF = Math.max(0.55, 1 - this.load * 0.0035);
     let desired = 0;
-    if (inp.mag > 0) {
+    if (inp.tank) {
+      this.heading += inp.turn * 3.2 * dt;
+      desired = this.maxSpeed * loadF * (inp.throttle > 0 ? 1 : inp.throttle < 0 ? -0.6 : 0);
+    } else if (inp.mag > 0) {
       const target = Math.atan2(inp.x, -inp.y);
       let diff = target - this.heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -153,7 +156,7 @@ export class Dozer {
       const align = Math.cos(diff);
       desired = this.maxSpeed * loadF * inp.mag * (align > 0 ? Math.max(0.3, align) : 0.12);
     }
-    const k = desired > this.speed ? 3.5 : 7;
+    const k = Math.abs(desired) > Math.abs(this.speed) && desired * this.speed >= 0 ? 3.5 : 7;
     this.speed += (desired - this.speed) * Math.min(1, dt * k);
     let nx = this.x + Math.sin(this.heading) * this.speed * dt;
     let nz = this.z + Math.cos(this.heading) * this.speed * dt;

@@ -7,7 +7,7 @@ const S = {
   en: {
     tagline: 'Plow oceans of gems. Crush them into gold. Get bigger.',
     play: 'Play', cont: 'Continue', newGame: 'New game', confirmNew: 'Tap again to erase progress',
-    hintDrag: 'Drag anywhere to drive', hintKeys: 'WASD / arrows, or drag to drive',
+    hintDrag: 'Drag anywhere to drive', hintKeys: 'W/S to drive, A/D to turn',
     hintCrush: 'Push the gems into the crusher!', hintPads: 'Push coins onto a pad to upgrade',
     zones: ['Dirt Quarry', 'Lava Canyon', 'Ice Field', 'Jungle Ruin', 'Treasure Vault'],
     blade: 'Blade', speed: 'Speed', crusher: 'Crusher', bridge: 'Bridge', conveyor: 'Conveyor',
@@ -19,7 +19,7 @@ const S = {
   es: {
     tagline: 'Ara océanos de gemas. Tritúralas en oro. Hazte enorme.',
     play: 'Jugar', cont: 'Continuar', newGame: 'Nueva partida', confirmNew: 'Toca otra vez para borrar el progreso',
-    hintDrag: 'Arrastra en cualquier lugar para conducir', hintKeys: 'WASD / flechas, o arrastra para conducir',
+    hintDrag: 'Arrastra en cualquier lugar para conducir', hintKeys: 'W/S para avanzar, A/D para girar',
     hintCrush: '¡Empuja las gemas a la trituradora!', hintPads: 'Empuja monedas sobre una plataforma para mejorar',
     zones: ['Cantera de Tierra', 'Cañón de Lava', 'Campo de Hielo', 'Ruina de la Jungla', 'Cámara del Tesoro'],
     blade: 'Pala', speed: 'Velocidad', crusher: 'Trituradora', bridge: 'Puente', conveyor: 'Cinta',
@@ -31,7 +31,7 @@ const S = {
   fr: {
     tagline: 'Labourez des océans de gemmes. Broyez-les en or. Devenez énorme.',
     play: 'Jouer', cont: 'Continuer', newGame: 'Nouvelle partie', confirmNew: 'Touchez encore pour tout effacer',
-    hintDrag: 'Glissez n’importe où pour conduire', hintKeys: 'ZQSD / flèches, ou glissez pour conduire',
+    hintDrag: 'Glissez n’importe où pour conduire', hintKeys: 'Z/S pour avancer, Q/D pour tourner',
     hintCrush: 'Poussez les gemmes dans le broyeur !', hintPads: 'Poussez les pièces sur une dalle pour améliorer',
     zones: ['Carrière de terre', 'Canyon de lave', 'Champ de glace', 'Ruine de la jungle', 'Salle du trésor'],
     blade: 'Lame', speed: 'Vitesse', crusher: 'Broyeur', bridge: 'Pont', conveyor: 'Tapis',
@@ -43,7 +43,7 @@ const S = {
   ja: {
     tagline: '宝石の海を押しまくれ。砕いて金貨に。もっと大きく。',
     play: 'プレイ', cont: 'つづける', newGame: 'はじめから', confirmNew: 'もう一度タップでデータを消去',
-    hintDrag: 'どこでもドラッグして運転', hintKeys: 'WASD・矢印キー、またはドラッグで運転',
+    hintDrag: 'どこでもドラッグして運転', hintKeys: 'W/Sで前進・後退、A/Dで旋回',
     hintCrush: '宝石をクラッシャーに押し込もう！', hintPads: 'コインをパッドに押してアップグレード',
     zones: ['土の採石場', '溶岩の峡谷', '氷原', 'ジャングル遺跡', '宝物庫'],
     blade: 'ブレード', speed: 'スピード', crusher: 'クラッシャー', bridge: '橋', conveyor: 'コンベア',
@@ -55,7 +55,7 @@ const S = {
   'zh-CN': {
     tagline: '推平宝石的海洋，碾成金币，越变越大。',
     play: '开始', cont: '继续', newGame: '新游戏', confirmNew: '再点一次以清除进度',
-    hintDrag: '在任意位置拖动来驾驶', hintKeys: 'WASD / 方向键，或拖动来驾驶',
+    hintDrag: '在任意位置拖动来驾驶', hintKeys: 'W/S 前进后退，A/D 转向',
     hintCrush: '把宝石推进粉碎机！', hintPads: '把金币推到升级板上来升级',
     zones: ['泥土采石场', '熔岩峡谷', '冰原', '丛林遗迹', '宝藏金库'],
     blade: '推铲', speed: '速度', crusher: '粉碎机', bridge: '桥', conveyor: '传送带',
@@ -67,7 +67,7 @@ const S = {
   'zh-TW': {
     tagline: '推平寶石的海洋，碾成金幣，越變越大。',
     play: '開始', cont: '繼續', newGame: '新遊戲', confirmNew: '再點一次以清除進度',
-    hintDrag: '在任意位置拖曳來駕駛', hintKeys: 'WASD / 方向鍵，或拖曳來駕駛',
+    hintDrag: '在任意位置拖曳來駕駛', hintKeys: 'W/S 前進後退，A/D 轉向',
     hintCrush: '把寶石推進粉碎機！', hintPads: '把金幣推到升級板上來升級',
     zones: ['泥土採石場', '熔岩峽谷', '冰原', '叢林遺跡', '寶藏金庫'],
     blade: '推鏟', speed: '速度', crusher: '粉碎機', bridge: '橋', conveyor: '輸送帶',
